@@ -1,0 +1,119 @@
+---
+title: "Practical Machine Learning Project"
+author: "graytitanium"
+date: "March 26, 2016"
+output: html_document
+---
+
+##Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+Loading required packages
+```{R}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+
+##Data
+Loading the Data
+```{R}
+trainFile <- "./pml-training.csv"
+testFile  <- "./pml-testing.csv"
+```
+
+Reading the Data
+```{R}
+trainRaw <- read.csv("./pml-training.csv")
+testRaw <- read.csv("./pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+```
+The training data set contains 19622 observations and 160 variables while the testing data set contains 20 observations and 160 variables. The "classe" variable in the training set is the outcome to predict. 
+
+###Clean the data
+Clean the data by removing cases with missing values and meaningless variables.
+```{R}
+sum(complete.cases(trainRaw))
+```
+There are 406 complete cases.Then, remove columns that contain NA missing values.
+```{R}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+```
+Next, remove columns that have meaningless variables in the analysis.
+```{R}
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+dim(trainCleaned)
+dim(testCleaned)
+```
+The cleaned training data set contains 19622 observations and 53 variables, while the testing data set contains 20 observations and 53 variables. 
+
+###Partioning the training set into two
+Partioning the cleaned raining data set into two data sets: 60% for training dataset and 40% for testing dataset.
+```{R}
+set.seed(22519) # For reproducibile purpose
+inTrain <- createDataPartition(trainCleaned$classe, p=0.60, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+dim(trainData)
+dim(testData)
+```
+The new training dataset contains 11776 observations and 53 variables, while the new testing dataset contains 7846 observations and 53 variables. 
+
+##Data Modeling
+The predictive model is fitted using using Random Forest algorithm as it reduces overfitting and is good for nonlinear features. 3-fold cross validation is used when applying the algorithm to select optimal tuning parameters for the model.
+```{R}
+controlRf <- trainControl(method="cv", 3)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+The performance of the model is tested on the validation data set.
+```{R}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(testData$classe, predictRf)
+
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+error <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+error
+```
+The estimated accuracy of the model is 99.3% and the estimated out-of-sample error is 0.7%.
+
+##Test Set Predictions
+Applying the model to the original testing dataset (downloaded from the datasource). 
+```{R}
+prediction <- predict(modelRf, testCleaned)
+prediction
+```
+
+Function to generate files with predictions to submit for assignment
+```{R}
+pml_write_files <- function(x) {
+  n <- length(x)
+  for(i in 1:n) {
+    filename <- paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+  }
+}
+
+pml_write_files(prediction)
+```
+
+##Appendix: Decision Tree Visualization
+```{R}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+dev.copy(png, file="Decision Tree Visualization.png")
+dev.off()
+```
